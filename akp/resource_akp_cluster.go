@@ -191,10 +191,15 @@ func (r *AkpClusterResource) upsert(ctx context.Context, diagnostics *diag.Diagn
 		return nil, nil
 	}
 	result, err := r.applyInstance(ctx, plan, apiReq, isCreate, r.akpCli.Cli.ApplyInstance, r.upsertKubeConfig)
-	if err != nil {
-		return result, err
+	// Always refresh cluster state to ensure we have consistent state, even if kubeconfig application failed
+	if result != nil {
+		refreshErr := refreshClusterState(ctx, diagnostics, r.akpCli.Cli, result, r.akpCli.OrgId, nil, plan)
+		if refreshErr != nil && err == nil {
+			// If we didn't have an error before but refresh failed, return the refresh error
+			return result, refreshErr
+		}
 	}
-	return result, refreshClusterState(ctx, diagnostics, r.akpCli.Cli, result, r.akpCli.OrgId, nil, plan)
+	return result, err
 }
 
 func (r *AkpClusterResource) applyInstance(ctx context.Context, plan *types.Cluster, apiReq *argocdv1.ApplyInstanceRequest, isCreate bool, applyInstance func(context.Context, *argocdv1.ApplyInstanceRequest) (*argocdv1.ApplyInstanceResponse, error), upsertKubeConfig func(ctx context.Context, plan *types.Cluster) error) (*types.Cluster, error) {
