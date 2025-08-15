@@ -3,6 +3,7 @@ package akp
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	hashitype "github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,9 +12,153 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 
+	"time"
+
+	"github.com/akuity/api-client-go/pkg/api/gateway/accesscontrol"
+	gwoption "github.com/akuity/api-client-go/pkg/api/gateway/option"
 	argocdv1 "github.com/akuity/api-client-go/pkg/api/gen/argocd/v1"
+	kargov1 "github.com/akuity/api-client-go/pkg/api/gen/kargo/v1"
+	orgcv1 "github.com/akuity/api-client-go/pkg/api/gen/organization/v1"
+	idv1 "github.com/akuity/api-client-go/pkg/api/gen/types/id/v1"
+	httpctx "github.com/akuity/grpc-gateway-client/pkg/http/context"
 	"github.com/akuity/terraform-provider-akp/akp/types"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+var (
+	instanceId        string
+	createdInstanceId string
+	testAkpCli        *AkpCli
+)
+
+func getInstanceId() string {
+	if instanceId == "" {
+		if v := os.Getenv("AKUITY_INSTANCE_ID"); v == "" {
+			// Create a new instance for testing
+			instanceId = createTestInstance()
+		} else {
+			instanceId = v
+		}
+	}
+
+	return instanceId
+}
+
+func getTestAkpCli() *AkpCli {
+	if testAkpCli != nil {
+		return testAkpCli
+	}
+
+	ctx := context.Background()
+
+	serverUrl := os.Getenv("AKUITY_SERVER_URL")
+	if serverUrl == "" {
+		serverUrl = "https://akuity.cloud"
+	}
+
+	apiKeyID := os.Getenv("AKUITY_API_KEY_ID")
+	apiKeySecret := os.Getenv("AKUITY_API_KEY_SECRET")
+
+	if apiKeyID == "" || apiKeySecret == "" {
+		panic("API key credentials are required")
+	}
+
+	// Create client following the same logic as the provider
+	cred := accesscontrol.NewAPIKeyCredential(apiKeyID, apiKeySecret)
+	ctx = httpctx.SetAuthorizationHeader(ctx, cred.Scheme(), cred.Credential())
+	gwc := gwoption.NewClient(serverUrl, false)
+	orgc := orgcv1.NewOrganizationServiceGatewayClient(gwc)
+
+	// Get Organization ID by name
+	res, err := orgc.GetOrganization(ctx, &orgcv1.GetOrganizationRequest{
+		Id:     orgName,
+		IdType: idv1.Type_NAME,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get organization: %v", err))
+	}
+
+	orgID := res.Organization.Id
+
+	// Create service clients
+	argoc := argocdv1.NewArgoCDServiceGatewayClient(gwc)
+	kargoc := kargov1.NewKargoServiceGatewayClient(gwc)
+
+	testAkpCli = &AkpCli{
+		Cli:      argoc,
+		KargoCli: kargoc,
+		Cred:     cred,
+		OrgId:    orgID,
+		OrgCli:   orgc,
+	}
+	return testAkpCli
+}
+
+func createTestInstance() string {
+	akpCli := getTestAkpCli()
+	ctx := context.Background()
+	ctx = httpctx.SetAuthorizationHeader(ctx, akpCli.Cred.Scheme(), akpCli.Cred.Credential())
+
+	instanceName := fmt.Sprintf("test-cluster-provider-%s", acctest.RandString(8))
+
+	// Create minimal ArgoCD configuration using struct directly
+	argoCDStruct := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"version": "v2.13.1",
+			"instanceSpec": map[string]interface{}{
+				"declarativeManagementEnabled": true,
+			},
+		},
+	}
+
+	argoCDStructPb, err := structpb.NewStruct(argoCDStruct)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create ArgoCD struct: %v", err))
+	}
+
+	// Build apply request
+	apiReq := &argocdv1.ApplyInstanceRequest{
+		OrganizationId: akpCli.OrgId,
+		IdType:         idv1.Type_NAME,
+		Id:             instanceName,
+		Argocd:         argoCDStructPb,
+	}
+
+	_, err = akpCli.Cli.ApplyInstance(ctx, apiReq)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create test instance: %v", err))
+	}
+
+	// Wait for instance to become available and get its ID
+	for i := 0; i < 30; i++ { // Wait up to 5 minutes
+		resp, err := akpCli.Cli.GetInstance(ctx, &argocdv1.GetInstanceRequest{
+			OrganizationId: akpCli.OrgId,
+			Id:             instanceName,
+			IdType:         idv1.Type_NAME,
+		})
+		if err == nil && resp.Instance != nil && resp.Instance.Id != "" {
+			return resp.Instance.Id
+		}
+		time.Sleep(10 * time.Second)
+	}
+
+	panic("Test instance did not become available within timeout")
+}
+
+func cleanupTestInstance() {
+	if createdInstanceId == "" || testAkpCli == nil {
+		return
+	}
+
+	ctx := context.Background()
+	ctx = httpctx.SetAuthorizationHeader(ctx, testAkpCli.Cred.Scheme(), testAkpCli.Cred.Credential())
+
+	// Delete the instance
+	_, _ = testAkpCli.Cli.DeleteInstance(ctx, &argocdv1.DeleteInstanceRequest{
+		Id:             createdInstanceId,
+		OrganizationId: testAkpCli.OrgId,
+	})
+}
 
 func TestAccClusterResource(t *testing.T) {
 	name := fmt.Sprintf("cluster-%s", acctest.RandString(10))
@@ -23,7 +168,7 @@ func TestAccClusterResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: providerConfig + testAccClusterResourceConfig("small", name, "test one"),
+				Config: providerConfig + testAccClusterResourceConfig("small", name, "test one", getInstanceId()),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
 					resource.TestCheckResourceAttr("akp_cluster.test", "namespace", "test"),
@@ -65,7 +210,7 @@ func TestAccClusterResource(t *testing.T) {
 			},
 			// Update and Read testing
 			{
-				Config: providerConfig + testAccClusterResourceConfig("medium", name, "test two"),
+				Config: providerConfig + testAccClusterResourceConfig("medium", name, "test two", getInstanceId()),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("akp_cluster.test", "spec.description", "test two"),
 					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.size", "medium"),
@@ -76,10 +221,10 @@ func TestAccClusterResource(t *testing.T) {
 	})
 }
 
-func testAccClusterResourceConfig(size string, name string, description string) string {
+func testAccClusterResourceConfig(size, name, description, instanceId string) string {
 	return fmt.Sprintf(`
 resource "akp_cluster" "test" {
-  instance_id = "6pzhawvy4echbd8x"
+  instance_id = %q
   name      = %q
   namespace = "test"
   labels = {
@@ -121,7 +266,7 @@ EOF
     }
   }
 }
-`, name, description, size)
+`, name, description, size, instanceId)
 }
 
 func TestAkpClusterResource_applyInstance(t *testing.T) {

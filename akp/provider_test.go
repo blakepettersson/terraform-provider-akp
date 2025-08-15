@@ -1,20 +1,35 @@
 package akp
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/akuity/terraform-provider-akp/akp/testhelpers"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
 
-const (
-	providerConfig = `
-provider "akp" {
-	org_name = "terraform-provider-acceptance-test"
-}
-`
+var (
+	orgName        = ""
+	providerConfig = ""
 )
+
+func TestMain(m *testing.M) {
+	if v := os.Getenv("AKUITY_PROVIDER_ORG_NAME"); v == "" {
+		orgName = "terraform-provider-acceptance-test"
+	} else {
+		orgName = v
+	}
+
+	providerConfig = fmt.Sprintf(`
+provider "akp" {
+	org_name = "%s"
+}
+`, orgName)
+
+	testhelpers.TestMain(m)
+}
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
 // acceptance testing. The factory function will be invoked for every Terraform
