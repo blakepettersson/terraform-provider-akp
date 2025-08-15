@@ -27,7 +27,13 @@ provider "akp" {
 }
 `, orgName)
 
-	os.Exit(m.Run())
+	code := m.Run()
+
+	if v := os.Getenv("CLEANUP_TEST_INSTANCE"); v == "true" {
+		cleanupTestInstance()
+	}
+
+	os.Exit(code)
 }
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
