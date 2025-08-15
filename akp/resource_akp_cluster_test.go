@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	hashitype "github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 
@@ -23,6 +25,8 @@ import (
 	healthv1 "github.com/akuity/api-client-go/pkg/api/gen/types/status/health/v1"
 	httpctx "github.com/akuity/grpc-gateway-client/pkg/http/context"
 	"github.com/akuity/terraform-provider-akp/akp/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -604,16 +608,48 @@ func TestAccClusterResourceKubeconfig(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: providerConfig + testAccClusterResourceConfigKubeconfig(name, getInstanceId()),
+				Config:      providerConfig + testAccClusterResourceConfigKubeconfig(name, getInstanceId()),
+				ExpectError: regexp.MustCompile("unable to apply manifests"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
-					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.host", "https://test-cluster.example.com"),
-					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.insecure", "true"),
-					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.token", "test-token"),
+					// Verify that cluster was automatically cleaned up and no state was committed
+					testCheckClusterCleanedUp(name, getInstanceId()),
 				),
 			},
 		},
 	})
+}
+
+func testCheckClusterCleanedUp(clusterName, instanceId string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		// Check that the cluster was automatically cleaned up by the provider
+		akpCli := getTestAkpCli()
+		ctx := context.Background()
+		ctx = httpctx.SetAuthorizationHeader(ctx, akpCli.Cred.Scheme(), akpCli.Cred.Credential())
+
+		clusterReq := &argocdv1.GetInstanceClusterRequest{
+			OrganizationId: akpCli.OrgId,
+			InstanceId:     instanceId,
+			Id:             clusterName,
+			IdType:         idv1.Type_NAME,
+		}
+
+		_, err := akpCli.Cli.GetInstanceCluster(ctx, clusterReq)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				// This is what we expect - the cluster should not exist
+				// Check that no resource exists in Terraform state
+				for name := range s.RootModule().Resources {
+					if name == "akp_cluster.test" {
+						return fmt.Errorf("cluster resource should not exist in Terraform state")
+					}
+				}
+				return nil
+			}
+			return fmt.Errorf("unexpected error when checking cluster: %v", err)
+		}
+
+		return fmt.Errorf("cluster %s should have been automatically cleaned up but still exists in API", clusterName)
+	}
 }
 
 func testAccClusterResourceConfigKubeconfig(name, instanceId string) string {
