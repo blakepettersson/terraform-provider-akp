@@ -201,6 +201,165 @@ func TestAccClusterResource(t *testing.T) {
 	})
 }
 
+func TestAccClusterResourceIPv6(t *testing.T) {
+	name := fmt.Sprintf("cluster-ipv6-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigIPv6(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.compatibility.ipv6_only", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceArgoCDNotifications(t *testing.T) {
+	name := fmt.Sprintf("cluster-notifications-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigNotifications(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.argocd_notifications_settings.in_cluster_settings", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceCustomAgentSize(t *testing.T) {
+	name := fmt.Sprintf("cluster-custom-size-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigCustomAgentSize(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.custom_agent_size_config.application_controller.memory", "2Gi"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.custom_agent_size_config.application_controller.cpu", "1000m"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.custom_agent_size_config.repo_server.memory", "4Gi"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.custom_agent_size_config.repo_server.cpu", "2000m"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.custom_agent_size_config.repo_server.replicas", "3"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceManagedCluster(t *testing.T) {
+	name := fmt.Sprintf("cluster-managed-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigManagedCluster(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.managed_cluster_config.secret_name", "test-secret"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.managed_cluster_config.secret_key", "kubeconfig"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceFeatures(t *testing.T) {
+	name := fmt.Sprintf("cluster-features-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigFeatures(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.multi_cluster_k8s_dashboard_enabled", "true"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.eks_addon_enabled", "true"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.datadog_annotations_enabled", "true"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.redis_tunneling", "true"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.app_replication", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceReapplyManifests(t *testing.T) {
+	name := fmt.Sprintf("cluster-reapply-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigReapplyManifests(name, "test initial", getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.description", "test initial"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "reapply_manifests_on_update", "true"),
+				),
+			},
+			{
+				Config: providerConfig + testAccClusterResourceConfigReapplyManifests(name, "test updated", getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.description", "test updated"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "reapply_manifests_on_update", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceNamespaceScoped(t *testing.T) {
+	name := fmt.Sprintf("cluster-ns-scoped-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigNamespaceScoped(name, true, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.namespace_scoped", "true"),
+				),
+			},
+			{
+				Config: providerConfig + testAccClusterResourceConfigNamespaceScoped(name, false, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.namespace_scoped", "false"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccClusterResourceProject(t *testing.T) {
+	name := fmt.Sprintf("cluster-project-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigProject(name, "test-project", getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "spec.data.project", "test-project"),
+				),
+			},
+		},
+	})
+}
+
 func testAccClusterResourceConfig(size, name, description, instanceId string) string {
 	return fmt.Sprintf(`
 resource "akp_cluster" "test" {
@@ -247,6 +406,220 @@ EOF
   }
 }
 `, instanceId, name, description, size)
+}
+
+func testAccClusterResourceConfigIPv6(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "IPv6 test cluster"
+    data = {
+      size = "small"
+      compatibility = {
+        ipv6_only = true
+      }
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
+}
+
+func testAccClusterResourceConfigNotifications(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "ArgoCD notifications test cluster"
+    data = {
+      size = "small"
+      argocd_notifications_settings = {
+        in_cluster_settings = true
+      }
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
+}
+
+func testAccClusterResourceConfigCustomAgentSize(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "Custom agent size test cluster"
+    data = {
+      size = "custom"
+      custom_agent_size_config = {
+        application_controller = {
+          memory = "2Gi"
+          cpu    = "1000m"
+        }
+        repo_server = {
+          memory   = "4Gi"
+          cpu      = "2000m"
+          replicas = 3
+        }
+      }
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
+}
+
+func testAccClusterResourceConfigManagedCluster(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "Managed cluster test"
+    data = {
+      size = "small"
+      managed_cluster_config = {
+        secret_name = "test-secret"
+        secret_key  = "kubeconfig"
+      }
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
+}
+
+func testAccClusterResourceConfigFeatures(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "Feature flags test cluster"
+    data = {
+      size                               = "small"
+      multi_cluster_k8s_dashboard_enabled = true
+      eks_addon_enabled                  = true
+      datadog_annotations_enabled        = true
+      redis_tunneling                    = true
+      app_replication                    = true
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
+}
+
+func testAccClusterResourceConfigReapplyManifests(name, description, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = %q
+    data = {
+      size = "small"
+    }
+  }
+  reapply_manifests_on_update       = true
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name, description)
+}
+
+func testAccClusterResourceConfigNamespaceScoped(name string, namespaceScoped bool, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = %t
+    description      = "Namespace scoped test cluster"
+    data = {
+      size = "small"
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name, namespaceScoped)
+}
+
+func testAccClusterResourceConfigProject(name, project, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "Project assignment test cluster"
+    data = {
+      size    = "small"
+      project = %q
+    }
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name, project)
+}
+
+func TestAccClusterResourceKubeconfig(t *testing.T) {
+	name := fmt.Sprintf("cluster-kubeconfig-%s", acctest.RandString(10))
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccClusterResourceConfigKubeconfig(name, getInstanceId()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("akp_cluster.test", "id"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.host", "https://test-cluster.example.com"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.insecure", "true"),
+					resource.TestCheckResourceAttr("akp_cluster.test", "kube_config.token", "test-token"),
+				),
+			},
+		},
+	})
+}
+
+func testAccClusterResourceConfigKubeconfig(name, instanceId string) string {
+	return fmt.Sprintf(`
+resource "akp_cluster" "test" {
+  instance_id = %q
+  name      = %q
+  namespace = "test"
+  spec = {
+    namespace_scoped = true
+    description      = "Kubeconfig test cluster"
+    data = {
+      size = "small"
+    }
+  }
+  kube_config = {
+    host     = "https://test-cluster.example.com"
+    insecure = true
+    token    = "test-token"
+  }
+  remove_agent_resources_on_destroy = true
+}
+`, instanceId, name)
 }
 
 func TestAkpClusterResource_applyInstance(t *testing.T) {
