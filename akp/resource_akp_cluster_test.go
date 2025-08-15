@@ -22,7 +22,6 @@ import (
 	idv1 "github.com/akuity/api-client-go/pkg/api/gen/types/id/v1"
 	httpctx "github.com/akuity/grpc-gateway-client/pkg/http/context"
 	"github.com/akuity/terraform-provider-akp/akp/types"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
@@ -98,42 +97,23 @@ func createTestInstance() string {
 	akpCli := getTestAkpCli()
 	ctx := context.Background()
 	ctx = httpctx.SetAuthorizationHeader(ctx, akpCli.Cred.Scheme(), akpCli.Cred.Credential())
-
 	instanceName := fmt.Sprintf("test-cluster-provider-%s", acctest.RandString(8))
 
-	// Create minimal ArgoCD configuration using struct directly
-	argoCDStruct := map[string]interface{}{
-		"spec": map[string]interface{}{
-			"version": "v2.13.1",
-			"instanceSpec": map[string]interface{}{
-				"declarativeManagementEnabled": true,
-			},
-		},
-	}
-
-	argoCDStructPb, err := structpb.NewStruct(argoCDStruct)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create ArgoCD struct: %v", err))
-	}
-
-	// Build apply request
-	apiReq := &argocdv1.ApplyInstanceRequest{
+	createReq := &argocdv1.CreateInstanceRequest{
 		OrganizationId: akpCli.OrgId,
-		IdType:         idv1.Type_NAME,
-		Id:             instanceName,
-		Argocd:         argoCDStructPb,
+		Name:           instanceName,
+		Version:        "v3.0.0",
 	}
-
-	_, err = akpCli.Cli.ApplyInstance(ctx, apiReq)
+	instance, err := akpCli.Cli.CreateInstance(ctx, createReq)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create test instance: %v", err))
+		panic(fmt.Sprintf("Failed to create instance: %v", err))
 	}
 
 	// Wait for instance to become available and get its ID
 	for i := 0; i < 30; i++ { // Wait up to 5 minutes
 		resp, err := akpCli.Cli.GetInstance(ctx, &argocdv1.GetInstanceRequest{
 			OrganizationId: akpCli.OrgId,
-			Id:             instanceName,
+			Id:             instance.GetInstance().Id,
 			IdType:         idv1.Type_NAME,
 		})
 		if err == nil && resp.Instance != nil && resp.Instance.Id != "" {
@@ -266,7 +246,7 @@ EOF
     }
   }
 }
-`, name, description, size, instanceId)
+`, instanceId, name, description, size)
 }
 
 func TestAkpClusterResource_applyInstance(t *testing.T) {

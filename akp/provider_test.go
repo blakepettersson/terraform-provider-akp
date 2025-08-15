@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/akuity/terraform-provider-akp/akp/testhelpers"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
@@ -16,7 +15,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if v := os.Getenv("AKUITY_PROVIDER_ORG_NAME"); v == "" {
+	if v := os.Getenv("AKUITY_ORG_NAME"); v == "" {
 		orgName = "terraform-provider-acceptance-test"
 	} else {
 		orgName = v
@@ -28,7 +27,7 @@ provider "akp" {
 }
 `, orgName)
 
-	testhelpers.TestMain(m)
+	os.Exit(m.Run())
 }
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
