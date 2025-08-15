@@ -221,10 +221,25 @@ func (r *AkpClusterResource) applyInstance(ctx context.Context, plan *types.Clus
 				// clean up the dangling cluster from the API
 				if isCreate {
 					tflog.Warn(ctx, fmt.Sprintf("Kubeconfig application failed during create, cleaning up cluster %s", plan.Name.ValueString()))
-					deleteReq := &argocdv1.DeleteInstanceClusterRequest{
+
+					// First, get the cluster ID by looking it up by name
+					getReq := &argocdv1.GetInstanceClusterRequest{
 						OrganizationId: r.akpCli.OrgId,
 						InstanceId:     plan.InstanceID.ValueString(),
 						Id:             plan.Name.ValueString(),
+						IdType:         idv1.Type_NAME,
+					}
+					clusterResp, getErr := r.akpCli.Cli.GetInstanceCluster(ctx, getReq)
+					if getErr != nil {
+						tflog.Error(ctx, fmt.Sprintf("Failed to lookup cluster %s for cleanup: %v", plan.Name.ValueString(), getErr))
+						return nil, fmt.Errorf("unable to apply manifests: %s (and failed to lookup cluster for cleanup: %s)", err, getErr)
+					}
+
+					// Now delete using the actual cluster ID
+					deleteReq := &argocdv1.DeleteInstanceClusterRequest{
+						OrganizationId: r.akpCli.OrgId,
+						InstanceId:     plan.InstanceID.ValueString(),
+						Id:             clusterResp.GetCluster().Id,
 					}
 					_, deleteErr := r.akpCli.Cli.DeleteInstanceCluster(ctx, deleteReq)
 					if deleteErr != nil {
