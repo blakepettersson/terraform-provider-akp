@@ -20,14 +20,14 @@ import (
 	kargov1 "github.com/akuity/api-client-go/pkg/api/gen/kargo/v1"
 	orgcv1 "github.com/akuity/api-client-go/pkg/api/gen/organization/v1"
 	idv1 "github.com/akuity/api-client-go/pkg/api/gen/types/id/v1"
+	healthv1 "github.com/akuity/api-client-go/pkg/api/gen/types/status/health/v1"
 	httpctx "github.com/akuity/grpc-gateway-client/pkg/http/context"
 	"github.com/akuity/terraform-provider-akp/akp/types"
 )
 
 var (
-	instanceId        string
-	createdInstanceId string
-	testAkpCli        *AkpCli
+	instanceId string
+	testAkpCli *AkpCli
 )
 
 func getInstanceId() string {
@@ -109,24 +109,41 @@ func createTestInstance() string {
 		panic(fmt.Sprintf("Failed to create instance: %v", err))
 	}
 
-	// Wait for instance to become available and get its ID
-	for i := 0; i < 30; i++ { // Wait up to 5 minutes
-		resp, err := akpCli.Cli.GetInstance(ctx, &argocdv1.GetInstanceRequest{
+	getResourceFunc := func(ctx context.Context) (*argocdv1.GetInstanceResponse, error) {
+		return akpCli.Cli.GetInstance(ctx, &argocdv1.GetInstanceRequest{
 			OrganizationId: akpCli.OrgId,
 			Id:             instance.GetInstance().Id,
-			IdType:         idv1.Type_NAME,
+			IdType:         idv1.Type_ID,
 		})
-		if err == nil && resp.Instance != nil && resp.Instance.Id != "" {
-			return resp.Instance.Id
-		}
-		time.Sleep(10 * time.Second)
 	}
 
-	panic("Test instance did not become available within timeout")
+	getStatusFunc := func(resp *argocdv1.GetInstanceResponse) healthv1.StatusCode {
+		if resp == nil || resp.Instance == nil {
+			return healthv1.StatusCode_STATUS_CODE_UNKNOWN
+		}
+		return resp.Instance.GetHealthStatus().GetCode()
+	}
+
+	err = waitForStatus(
+		ctx,
+		getResourceFunc,
+		getStatusFunc,
+		[]healthv1.StatusCode{healthv1.StatusCode_STATUS_CODE_HEALTHY},
+		10*time.Second,
+		5*time.Minute,
+		fmt.Sprintf("Test instance %s", instanceName),
+		"health",
+	)
+
+	if err != nil {
+		panic(fmt.Sprintf("Test instance did not become healthy: %v", err))
+	}
+
+	return instance.Instance.Id
 }
 
 func cleanupTestInstance() {
-	if createdInstanceId == "" || testAkpCli == nil {
+	if instanceId == "" || testAkpCli == nil {
 		return
 	}
 
@@ -135,7 +152,7 @@ func cleanupTestInstance() {
 
 	// Delete the instance
 	_, _ = testAkpCli.Cli.DeleteInstance(ctx, &argocdv1.DeleteInstanceRequest{
-		Id:             createdInstanceId,
+		Id:             instanceId,
 		OrganizationId: testAkpCli.OrgId,
 	})
 }
