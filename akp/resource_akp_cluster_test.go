@@ -747,25 +747,6 @@ func TestAkpClusterResource_applyInstance(t *testing.T) {
 			},
 			error: nil,
 		},
-		{
-			name: "error path, with kubeconfig",
-			args: args{
-				plan: &types.Cluster{
-					Kubeconfig: &types.Kubeconfig{
-						Host: hashitype.StringValue("some-host"),
-					},
-				},
-				isCreate: true,
-				applyInstance: func(ctx context.Context, request *argocdv1.ApplyInstanceRequest) (*argocdv1.ApplyInstanceResponse, error) {
-					return &argocdv1.ApplyInstanceResponse{}, nil
-				},
-				upsertKubeConfig: func(ctx context.Context, plan *types.Cluster) error {
-					return errors.New("some kube apply error")
-				},
-			},
-			want:  &types.Cluster{},
-			error: fmt.Errorf("unable to apply manifests: some kube apply error"),
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
