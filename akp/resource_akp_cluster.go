@@ -163,6 +163,10 @@ func (r *AkpClusterResource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 	_, err = r.akpCli.Cli.DeleteInstanceCluster(ctx, apiReq)
 	if err != nil {
+		if status.Code(err) == codes.NotFound || status.Code(err) == codes.PermissionDenied {
+			// Cluster is already deleted, this is fine
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete Akuity cluster. %s", err))
 		return
 	}
@@ -294,7 +298,7 @@ func refreshClusterState(ctx context.Context, diagnostics *diag.Diagnostics, cli
 	tflog.Debug(ctx, fmt.Sprintf("Get cluster request: %s", clusterReq))
 	clusterResp, err := client.GetInstanceCluster(ctx, clusterReq)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
+		if status.Code(err) == codes.NotFound || status.Code(err) == codes.PermissionDenied {
 			state.RemoveResource(ctx)
 			return nil
 		}
